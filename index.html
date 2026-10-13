@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Чат</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: 30px auto; padding: 0 15px; }
+    input, button, select { padding: 8px; margin: 4px 0; }
+    #messages { height: 300px; overflow-y: auto; border: 1px solid #aaa; padding: 10px; }
+    #messages p { margin: 8px 0; overflow-wrap: anywhere; }
+    #text { width: 70%; }
+  </style>
+</head>
+<body>
+  <h1>Дугин кт</h1>
+
+  <form id="login">
+    <input id="name" placeholder="Ваше имя" maxlength="30" required>
+    <input id="color" type="color" value="#2056b3" aria-label="Цвет сообщений">
+    <button id="join" disabled>Войти</button>
+  </form>
+
+  <p id="status">Подключение...</p>
+
+  <div id="chat" hidden>
+    <p>В чате: <span id="users"></span></p>
+    <div id="messages" aria-live="polite"></div>
+
+    <form id="send">
+      <label for="to">Кому:</label>
+      <select id="to"><option value="">Всем</option></select>
+      <br>
+      <input id="text" placeholder="Сообщение" maxlength="1000" required autocomplete="off">
+      <button id="sendButton">Отправить</button>
+    </form>
+  </div>
+
+  <script>
+    const socket = new WebSocket('ws://' + location.host);
+    const login = document.getElementById('login');
+    const nameInput = document.getElementById('name');
+    const color = document.getElementById('color');
+    const join = document.getElementById('join');
+    const status = document.getElementById('status');
+    const chat = document.getElementById('chat');
+    const users = document.getElementById('users');
+    const messages = document.getElementById('messages');
+    const form = document.getElementById('send');
+    const text = document.getElementById('text');
+    const to = document.getElementById('to');
+    let myId;
+
+    socket.onopen = () => {
+      join.disabled = false;
+      status.textContent = 'Введите имя и выберите цвет.';
+    };
+
+    login.onsubmit = event => {
+      event.preventDefault();
+      if (!nameInput.value.trim()) return;
+      socket.send(JSON.stringify({ type: 'join', name: nameInput.value, color: color.value }));
+    };
+
+    form.onsubmit = event => {
+      event.preventDefault();
+      if (!text.value.trim()) return;
+      socket.send(JSON.stringify({ type: 'message', text: text.value, to: to.value }));
+      text.value = '';
+      text.focus();
+    };
+
+    socket.onmessage = event => {
+      const data = JSON.parse(event.data);
+
+      if (data.type === 'joined') {
+        myId = data.id;
+        login.hidden = true;
+        chat.hidden = false;
+        status.textContent = 'Вы вошли как ' + nameInput.value.trim();
+        text.focus();
+      }
+
+      if (data.type === 'users') {
+        users.textContent = data.users.map(user => user.name).join(', ');
+        const selected = to.value;
+        to.replaceChildren(new Option('Всем', ''));
+        for (const user of data.users) {
+          if (user.id !== myId) to.add(new Option(user.name, user.id));
+        }
+        if ([...to.options].some(option => option.value === selected)) to.value = selected;
+      }
+
+      if (data.type === 'system' || data.type === 'message') {
+        const p = document.createElement('p');
+        if (data.type === 'system') {
+          p.textContent = data.text;
+          p.style.color = '#666666';
+        } else {
+          p.textContent = (data.private ? '[Личное для ' + data.to + '] ' : '') + data.name + ': ' + data.text;
+          p.style.color = data.color;
+        }
+        messages.append(p);
+        messages.scrollTop = messages.scrollHeight;
+      }
+    };
+
+    socket.onclose = () => {
+      status.textContent = 'Соединение закрыто. Обновите страницу для подключения.';
+      join.disabled = true;
+      document.getElementById('sendButton').disabled = true;
+    };
+
+    socket.onerror = () => {
+      status.textContent = 'Не удалось подключиться к серверу.';
+    };
+  </script>
+</body>
+</html>
